@@ -1,0 +1,26 @@
+[tool.poetry]
+name = "gnn-for-arithmetics"
+version = "0.1.0"
+description = "Train a graph neural network (GNN) on doing complex arithmetics"
+authors = ["Martin Krause <martin.krause.85@gmx.de>"]
+license = "MIT"
+readme = "README.md"
+packages = [{include = "arigin"}]
+
+[tool.poetry.dependencies]
+python = "^3.12"
+pandas = "^2.2.3"
+pyarrow = "^17.0.0"
+torch = "^2.5.0"
+torch-geometric = "^2.6.1"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.3.3"
+pytest-cov = "^5.0.0"
+
+[tool.poetry.group.playground.dependencies]
+ipykernel = "^6.29.5"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
