@@ -1,3 +1,4 @@
+import re
 import random
 
 OPERATORS = ["+", "-", "*", "/"]
@@ -42,12 +43,14 @@ def generate(max_integer: int, max_numbers: int) -> str:
                 next_possible_entity.append(CLOSE_PARENTHESIS)
             next_entity = random.choice(next_possible_entity)
         elif previous_entity in OPERATORS:  # Operator
-            next_entity = _number(max_integer)
+            next_possible_entity = [_number(max_integer), OPEN_PARENTHESIS]
+            next_entity = random.choice(next_possible_entity)
         elif previous_entity == CLOSE_PARENTHESIS:  # )
             next_possible_entity = list(OPERATORS)
             next_entity = random.choice(next_possible_entity)
         elif previous_entity == OPEN_PARENTHESIS:  # (
-            next_entity = _number(max_integer)
+            next_possible_entity = [_number(max_integer), OPEN_PARENTHESIS]
+            next_entity = random.choice(next_possible_entity)
         else:  # None <- initial
             next_possible_entity = [
                 _number(max_integer),
