@@ -1,7 +1,7 @@
 import pytest
 import re
 
-from arigin.data_generation import generate, OPERATORS
+from arigin.expressions import generate, OPERATORS
 
 
 @pytest.mark.parametrize("max_integer, max_numbers", [(10, 2), (100, 3), (1000, 5)])

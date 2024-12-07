@@ -11,6 +11,9 @@ GraphEntities = Dict[
     ]
 
 
+MATCH_PATTERN = r"\w*\.?\w*"
+
+
 def extract_first_pattern(pattern: str, expression: str) -> Optional[str]:
     """
     Given a string expression extract the first occurence of
@@ -35,9 +38,12 @@ def extract_multiplication_or_division(expression: str) -> Optional[str]:
     Given a expression, extract the first part connected to
     muliplication or division. Returns primitive expression of the 
     form
-        '[Number] [Operator] [Number]' 
+        '[LeftOperant] [Operator] [RightOperant]' 
     """
-    return extract_first_pattern(r"(\w+\s*[*/]\s*\w+)", expression)
+    return extract_first_pattern(
+        rf"{MATCH_PATTERN}\s*[*/]\s*{MATCH_PATTERN}", 
+        expression
+    )
 
 
 def extract_addition_subtraction(expression: str) -> Optional[str]:
@@ -45,17 +51,20 @@ def extract_addition_subtraction(expression: str) -> Optional[str]:
     Given a expression, extract the first part connected to
     addition and subtraction. Returns primitive expression of the 
     form
-        '[Number] [Operator] [Number]' 
+        '[LeftOperant] [Operator] [RightOperant]' 
     """
-    return extract_first_pattern(r"(\w+\s*[+-]\s*\w+)", expression)
+    return extract_first_pattern(
+        rf"{MATCH_PATTERN}\s*[+-]\s*{MATCH_PATTERN}",
+        expression
+    )
 
 
 def remove_redundant_parenthesis(expression: str) -> str:
     """
-    Replace patterns like '( R<alphanumeric> )' -> 'R<alphanumeric>' and
-    '( <integer> )' -> '<integer>'  and so remove redundant parentheses. 
+    Replace patterns like '( RESULT<alphanumeric> )' -> 'RESULT<alphanumeric>' and
+    '( <float> )' -> '<float>'  and so remove redundant parentheses. 
     This also handles cases where there are multiple layers of redundant
-    parentheses around R<alphanumeric>.
+    parentheses around RESULT<alphanumeric>.
 
     :param expression: The mathematical expression as a string.
     :type expression: str
@@ -64,10 +73,7 @@ def remove_redundant_parenthesis(expression: str) -> str:
     """
 
     # Regular expression to match redundant parentheses around R<alphanumeric>
-    patterns = [
-        r"\(\s*(R\w+)\s*\)",  #  ( R<alphanumeric> )
-        r"\(\s*(\d+)\s*\)"  # ( <integer> )
-    ]
+    patterns = [rf"\(\s*({MATCH_PATTERN})\s*\)"]
 
     # Continuously remove redundant parentheses as long as they exist
     for pattern in patterns:
@@ -85,9 +91,9 @@ def graph_elements_from_primitive_expression(
     graph entities.
 
     A primitive expression is expected to be in the form:
-    '[Number] [Operator] [Number]' or
-    'R<alphanumeric> [Operator] R<alphanumeric>' or a mixture of both, 
-    where 'R' represents a relationship to a node in the graph.
+    '[LeftOperant] [Operator] [RightOperant]' or
+    'RESULT<alphanumeric> [Operator] RESULT<alphanumeric>' or a mixture of both, 
+    where 'RESULT' represents a relationship to a node in the graph.
 
     This function will:
     - Parse the primitive expression into its components (left operand, 
@@ -128,36 +134,36 @@ def graph_elements_from_primitive_expression(
     nodes = graph_entities["nodes"]
 
     left = elements_list[0]
-    if left.startswith("R"):
-        left = left[1:]
+    if left.startswith("RESULT"):
+        left = left[6:]
         left = [
             node for node in graph_entities["nodes"]
             if node.id == left
         ][0]
     else:
-        left = elements.Number(
+        left = elements.LeftOperand(
             expression=left, 
-            value=int(left)
+            value=float(left)
         )
         nodes.append(left)
     
     right = elements_list[2]
-    if right.startswith("R"):
-        right = right[1:]
+    if right.startswith("RESULT"):
+        right = right[6:]
         right = [
             node for node in graph_entities["nodes"]
             if node.id == right
         ][0]
     else:
-        right = elements.Number(
+        right = elements.RightOperand(
             expression=right, 
-            value=int(right)
+            value=float(right)
         )
         nodes.append(right)
     
     operator = elements.Operator(
         expression=elements_list[1],
-        value=elements_list[1]
+        type=elements_list[1]
     )
     nodes.append(operator)
 
@@ -216,29 +222,34 @@ def graph_from_expression(expr: str) -> GraphEntities:
         }
     """
 
-    graph_elements = {"nodes": [], "relationships": []}
+    graph_entities = {"nodes": [], "relationships": []}
 
-    expr = remove_redundant_parenthesis(expr)
+    try:
+        expr = remove_redundant_parenthesis(expr)
 
-    while True:
-        inner = extract_innermost_parentheses(expr)
-        if inner is None:  # No parenthesis found, treat entire expr as inner
-            inner = expr
         while True:
-            primitive_inner = (
-                extract_multiplication_or_division(inner) or
-                extract_addition_subtraction(inner)
-            )
-            if primitive_inner:
-                result = graph_elements_from_primitive_expression(
-                    primitive_inner,
-                    graph_elements
-                )
-                expr = expr.replace(primitive_inner, f"R{result.id}", 1)
-                inner = inner.replace(primitive_inner, f"R{result.id}", 1)
-            elif not extract_innermost_parentheses(inner):
-                return graph_elements
-            else:
-                break
+            inner = extract_innermost_parentheses(expr)
 
-            expr = remove_redundant_parenthesis(expr)
+            if inner is None:  # No parenthesis found, treat entire expr as inner
+                inner = expr
+
+            while True:
+                primitive_inner = (
+                    extract_multiplication_or_division(inner) or
+                    extract_addition_subtraction(inner)
+                )
+                if primitive_inner:
+                    result = graph_elements_from_primitive_expression(
+                        primitive_inner,
+                        graph_entities
+                    )
+                    expr = expr.replace(primitive_inner, f"RESULT{result.id}", 1)
+                    inner = inner.replace(primitive_inner, f"RESULT{result.id}", 1)
+                elif not extract_innermost_parentheses(inner):
+                    return graph_entities
+                else:
+                    break
+
+                expr = remove_redundant_parenthesis(expr)
+    except ZeroDivisionError:
+        return graph_entities
