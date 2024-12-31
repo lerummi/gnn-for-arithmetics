@@ -15,7 +15,6 @@ class OperatorType(str, Enum):
 class RelationshipType(str, Enum):
     IS_LEFT_OPERANT_OF = "is_left_operant_of"
     IF_RIGHT_OPERANT_OF = "is_right_operant_of"
-    RESULTS_IN = "results_in"
 
 
 class AbstractModel(BaseModel):
@@ -78,22 +77,11 @@ class Operator(Node):
     """
     Representation of arithmetic operator.
     """
+    id: str = Field(default_factory=lambda: "%032x" % random.getrandbits(128))
     type: OperatorType = Field(
         None, 
         description="Arithmetic operators can have different types."
     )
-
-
-class Result(Node):
-    """
-    Representation of a result of an expression.
-    """
-    value: Optional[float] = Field(
-        None, 
-        description=
-            "Value representing a result. Can also be Null "
-            "if the result is unknown."
-        )
 
 
 class IsLeftOperantOf(Relationship):
@@ -101,7 +89,7 @@ class IsLeftOperantOf(Relationship):
     Representing the relation between a number beeing the left operant
     to an operator.
     """
-    source: Union[LeftOperand, Result]
+    source: Union[LeftOperand, Operator]
     target: Operator
 
 
@@ -110,16 +98,21 @@ class IsRightOperantOf(Relationship):
     Representing the relation between a number beeing the right operant
     to an operator.
     """
-    source: Union[RightOperand, Result]
+    source: Union[RightOperand, Operator]
     target: Operator
 
 
-class ResultsIn(Relationship):
+def node_by_id(nodes: List[Node], node_id: str):
     """
-    Representing the relation between an operator and a result.
+    Select node from a list of nodes by id. Returns None if not found.
     """
-    source: Operator
-    target: Result
+    result = [
+        node for node in nodes if node.id == node_id
+    ]
+    if result:
+        return result[0]
+    else:
+        return None
 
 
 def model_to_frame(model: Union[AbstractModel, List[AbstractModel]]):

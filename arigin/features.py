@@ -4,7 +4,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import FunctionTransformer, OneHotEncoder, LabelEncoder, StandardScaler, PolynomialFeatures
 from sklearn.impute import SimpleImputer
 
-from arigin.graph.elements import model_to_frame, mask_result_values, join_categorical
+from arigin.graph.elements import model_to_frame, join_categorical
 
 
 class PipelineLabelEncoder(LabelEncoder):

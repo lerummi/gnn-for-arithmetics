@@ -1,6 +1,9 @@
 import re
-from typing import Dict, List, Union, Optional
+import numpy as np
+from tqdm import tqdm
+from typing import Dict, List, Union, Optional, Tuple
 from arigin.graph import elements
+from arigin.expressions import generate
 
 
 # Placeholder for storing graph entities, i.e. dictionary of nodes
@@ -61,10 +64,10 @@ def extract_addition_subtraction(expression: str) -> Optional[str]:
 
 def remove_redundant_parenthesis(expression: str) -> str:
     """
-    Replace patterns like '( RESULT<alphanumeric> )' -> 'RESULT<alphanumeric>' and
+    Replace patterns like '( OPERATOR<alphanumeric> )' -> 'OPERATOR<alphanumeric>' and
     '( <float> )' -> '<float>'  and so remove redundant parentheses. 
     This also handles cases where there are multiple layers of redundant
-    parentheses around RESULT<alphanumeric>.
+    parentheses around OPERATOR<alphanumeric>.
 
     :param expression: The mathematical expression as a string.
     :type expression: str
@@ -85,15 +88,15 @@ def remove_redundant_parenthesis(expression: str) -> str:
 
 def graph_elements_from_primitive_expression(
         primitive_expr: str,
-        graph_entities: GraphEntities) -> elements.Result:
+        graph_entities: GraphEntities) -> elements.Operator:
     """
     Create graph elements from a given primitive expression and update the 
     graph entities.
 
     A primitive expression is expected to be in the form:
     '[LeftOperant] [Operator] [RightOperant]' or
-    'RESULT<alphanumeric> [Operator] RESULT<alphanumeric>' or a mixture of both, 
-    where 'RESULT' represents a relationship to a node in the graph.
+    'OPERATOR<alphanumeric> [Operator] OPERATOR<alphanumeric>' or a mixture of both, 
+    where 'OPERATOR' represents a relationship to a node in the graph.
 
     This function will:
     - Parse the primitive expression into its components (left operand, 
@@ -111,8 +114,8 @@ def graph_elements_from_primitive_expression(
                            relationships.
     :type graph_entities: GraphEntities
 
-    :returns: The result of the evaluation of the primitive expression.
-    :rtype: elements.Result
+    :returns: The operator of the evaluation of the primitive expression.
+    :rtype: elements.Operator
 
     :raises IndexError: If there is an issue accessing elements from graph_
                         entities.
@@ -124,9 +127,7 @@ def graph_elements_from_primitive_expression(
         ...     "nodes": [],
         ...     "relationships": []
         ... }
-        >>> result = graph_elements_from_primitive_expression("5 + 3", graph_entities)
-        >>> print(result.expression)
-        '5 + 3'
+        >>> operator = graph_elements_from_primitive_expression("5 + 3", graph_entities)
     """
 
     elements_list = primitive_expr.split(" ")
@@ -134,30 +135,22 @@ def graph_elements_from_primitive_expression(
     nodes = graph_entities["nodes"]
 
     left = elements_list[0]
-    if left.startswith("RESULT"):
-        left = left[6:]
-        left = [
-            node for node in graph_entities["nodes"]
-            if node.id == left
-        ][0]
+    if left.isalnum():
+        left = elements.node_by_id(nodes, left)
     else:
         left = elements.LeftOperand(
             expression=left, 
-            value=float(left)
+            value=left
         )
         nodes.append(left)
     
     right = elements_list[2]
-    if right.startswith("RESULT"):
-        right = right[6:]
-        right = [
-            node for node in graph_entities["nodes"]
-            if node.id == right
-        ][0]
+    if right.isalnum():
+        right = elements.node_by_id(nodes, right)
     else:
         right = elements.RightOperand(
             expression=right, 
-            value=float(right)
+            value=right
         )
         nodes.append(right)
     
@@ -167,12 +160,6 @@ def graph_elements_from_primitive_expression(
     )
     nodes.append(operator)
 
-    result = elements.Result(
-        expression=primitive_expr, 
-        value=eval(f"{left.value} {operator.expression} {right.value}")
-    )
-    nodes.append(result)
-
     relationships = graph_entities["relationships"]
     relationships.append(
         elements.IsLeftOperantOf(source=left, target=operator)
@@ -180,11 +167,8 @@ def graph_elements_from_primitive_expression(
     relationships.append(
         elements.IsRightOperantOf(source=right, target=operator)
     )
-    relationships.append(
-        elements.ResultsIn(source=operator, target=result)
-    )
 
-    return result
+    return operator
 
 
 def graph_from_expression(expr: str) -> GraphEntities:
@@ -239,12 +223,12 @@ def graph_from_expression(expr: str) -> GraphEntities:
                     extract_addition_subtraction(inner)
                 )
                 if primitive_inner:
-                    result = graph_elements_from_primitive_expression(
+                    operator = graph_elements_from_primitive_expression(
                         primitive_inner,
                         graph_entities
                     )
-                    expr = expr.replace(primitive_inner, f"RESULT{result.id}", 1)
-                    inner = inner.replace(primitive_inner, f"RESULT{result.id}", 1)
+                    expr = expr.replace(primitive_inner, operator.id, 1)
+                    inner = inner.replace(primitive_inner, operator.id, 1)
                 elif not extract_innermost_parentheses(inner):
                     return graph_entities
                 else:
@@ -253,3 +237,57 @@ def graph_from_expression(expr: str) -> GraphEntities:
                 expr = remove_redundant_parenthesis(expr)
     except ZeroDivisionError:
         return graph_entities
+
+
+def generate_multiple_graphs(
+        n_graphs=1000,
+        min_numbers=2,
+        max_numbers=4
+) -> Tuple[GraphEntities, np.ndarray]:
+    """
+    Generate multiple graphs with random mathematical expressions.
+
+    This function generates multiple graphs with random mathematical 
+    expressions, where each graph consists of nodes and relationships 
+    representing the expression. The number of graphs to generate, as well 
+    as the minimum and maximum number of numbers in each expression, can be 
+    specified.
+
+    :param n_graphs: The number of graphs to generate.
+    :type n_graphs: int
+    :param min_numbers: The minimum number of numbers in each expression.
+    :type min_numbers: int
+    :param max_numbers: The maximum number of numbers in each expression.
+    :type max_numbers: int
+
+    :returns: GraphEntities and results of the generated graphs.
+    :rtype: Tuple[GraphEntities, np.ndarray]
+
+    :example:
+
+        >>> graphs = generate_multiple_graphs(n_graphs=10, min_numbers=2, max_numbers=4)
+        >>> print(len(graphs))
+        10
+    """
+
+    graph_entities = {"nodes": [], "relationships": []}
+    results = []
+    batch = []
+    for i in tqdm(range(n_graphs), total=n_graphs):
+        expr = generate(min_numbers, max_numbers)
+        single_graph_entities = graph_from_expression(expr)
+        try:
+            y = eval(expr)
+        except ZeroDivisionError:
+            continue
+        n_nodes = len(single_graph_entities["nodes"])
+        graph_entities["nodes"] += single_graph_entities["nodes"]
+        graph_entities["relationships"] += single_graph_entities["relationships"]
+        batch += [i] * n_nodes
+
+        results.append(y)
+
+    graph_entities.update({"batch": batch})
+    results = np.array(results).reshape(-1, 1)
+
+    return graph_entities, results
