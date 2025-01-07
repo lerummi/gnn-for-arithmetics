@@ -1,6 +1,9 @@
-from torch.nn import Linear, Module, ModuleList
+import torch
+from torch.nn import Linear, Module
 import torch.nn.functional as F
-from torch_geometric.nn import GCNConv
+from torch_geometric.nn import GCNConv, GATv2Conv
+from torch_geometric.nn import pool
+from torch_geometric.nn import norm
 from torch_geometric.nn import (
     TransformerConv, 
     MaskLabel,
@@ -109,39 +112,83 @@ class GCN(Module):
         return x_
     
 
-class UniMP(Module):
+class MathModel(torch.nn.Module):
     def __init__(
             self, 
-            in_channels, 
-            num_classes, 
-            hidden_channels, 
-            num_layers,
-            heads, 
-            dropout=0.3
-        ):
+            in_channels: int,
+            emb_channels: int,
+            hidden_channels: int, 
+            out_channels: int, 
+            heads: int = 1,
+            edge_dim: int = None,
+            activation = F.gelu,
+            dropout=0.2):
+
         super().__init__()
 
-        self.label_emb = MaskLabel(num_classes, in_channels)
+        self.n_conv = 3
+        self.n_pool = 3
 
-        self.convs = ModuleList()
-        self.norms = ModuleList()
-        for i in range(1, num_layers + 1):
-            if i < num_layers:
-                out_channels = hidden_channels // heads
-                concat = True
-            else:
-                out_channels = num_classes
-                concat = False
-            conv = TransformerConv(in_channels, out_channels, heads,
-                                   concat=concat, beta=True, dropout=dropout)
-            self.convs.append(conv)
-            in_channels = hidden_channels
+        self.init_embedding = Linear(in_channels, hidden_channels * heads)
 
-            if i < num_layers:
-                self.norms.append(LayerNorm(hidden_channels))
+        self.conv = torch.nn.ModuleList()
+        for _ in range(self.n_pool):
+            self.conv.append(torch.nn.ModuleList())
+            for _ in range(self.n_conv):
+                self.conv[-1].append(
+                    GATv2Conv(
+                    hidden_channels * heads,
+                    hidden_channels, 
+                    heads=heads,
+                    bias=False,
+                    add_self_loops=False,
+                    edge_dim=edge_dim,
+                    dropout=dropout
+                    )
+                )
 
-    def forward(self, x, y, edge_index, label_mask):
-        x = self.label_emb(x, y, label_mask)
-        for conv, norm in zip(self.convs, self.norms):
-            x = norm(conv(x, edge_index)).relu()
-        return self.convs[-1](x, edge_index)
+        self.pool = torch.nn.ModuleList()
+        for _ in range(self.n_pool):
+            self.pool.append(
+                pool.SAGPooling(
+                    hidden_channels * heads,
+                    ratio=0.5,
+                    GNN=GATv2Conv,
+                    heads=1,
+                )
+            )
+
+        self.final_embedding = Linear(hidden_channels * heads, emb_channels)
+        self.norm = LayerNorm(hidden_channels * heads)
+
+        self.head = torch.nn.ModuleList()
+        self.head.append(Linear(emb_channels, emb_channels))
+        self.head.append(Linear(emb_channels, out_channels))
+
+        self.activation = activation
+
+    def embedding(self, x, edge_index, edge_attr, batch):
+
+        x = self.init_embedding(x)
+
+        out = 0
+        for ip, p in enumerate(self.pool):
+            for c in self.conv[ip]:
+                x_ = c(x, edge_index, edge_attr)
+                x = self.norm(x + self.activation(x_))
+
+            out += pool.global_max_pool(x, batch)
+
+            x, edge_index, edge_attr, batch, _, _ = p(x, edge_index, edge_attr, batch=batch)
+
+        return self.final_embedding(out)
+
+    def forward(self, x, edge_index, edge_attr, batch):
+
+        x = self.embedding(x, edge_index, edge_attr, batch)
+
+        for h in self.head:
+            x = self.activation(x)
+            x = h(x)
+
+        return x

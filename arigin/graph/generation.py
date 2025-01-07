@@ -273,7 +273,8 @@ def generate_multiple_graphs(
     graph_entities = {"nodes": [], "relationships": []}
     results = []
     batch = []
-    for i in tqdm(range(n_graphs), total=n_graphs):
+    graph_i = 0
+    for _ in tqdm(range(n_graphs), total=n_graphs):
         expr = generate(min_numbers, max_numbers)
         single_graph_entities = graph_from_expression(expr)
         try:
@@ -283,9 +284,10 @@ def generate_multiple_graphs(
         n_nodes = len(single_graph_entities["nodes"])
         graph_entities["nodes"] += single_graph_entities["nodes"]
         graph_entities["relationships"] += single_graph_entities["relationships"]
-        batch += [i] * n_nodes
+        batch += [graph_i] * n_nodes
 
         results.append(y)
+        graph_i += 1
 
     graph_entities.update({"batch": batch})
     results = np.array(results).reshape(-1, 1)

@@ -93,4 +93,4 @@ class GraphEntityToDataSet(BaseEstimator, TransformerMixin):
             y = torch.tensor(y, dtype=torch.float)
         batch_no = torch.tensor(X["batch"], dtype=torch.long)
 
-        return Data(x=x, edge_index=edge_index, y=y, batch=batch_no)
+        return Data(x=x, edge_index=edge_index, edge_attr=E,  y=y, batch=batch_no)
